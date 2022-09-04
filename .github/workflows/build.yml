@@ -1,0 +1,39 @@
+name: Build ipa
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+      - '.gitignore'
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+      - '.gitignore'
+  workflow_dispatch:
+  
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Build
+        run: xcodebuild build -scheme WallpaperSetter -configuration Release CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO BUILD_DIR=${{ github.workspace }}/build
+      - name: Package ipa
+        run: |
+          mkdir Payload
+          cp -r ${{ github.workspace }}/build/Release-iphoneos/WPSetter.app Payload
+          zip -r WallpaperSetter.ipa Payload
+      - name: Upload ipa
+        uses: actions/upload-artifact@v3.1.0
+        with:
+          name: WallpaperSetter
+          path: WallpaperSetter.ipa
+          if-no-files-found: error
