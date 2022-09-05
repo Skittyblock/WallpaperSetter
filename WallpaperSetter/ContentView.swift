@@ -32,6 +32,14 @@ struct ContentView: View {
     @State private var showingSelectAlert: Bool = false
     @State private var showingErrorAlert: Bool = false
 
+    private static var frameworkPath: String = {
+    #if TARGET_OS_SIMULATOR
+        "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS.simruntime/Contents/Resources/RuntimeRoot/System/Library/PrivateFrameworks"
+    #else
+        "/System/Library/PrivateFrameworks"
+    #endif
+    }()
+
     var body: some View {
         NavigationView {
             List {
@@ -131,16 +139,72 @@ struct ContentView: View {
         }
     }
 
-    // doesn't work without extra perms, which we don't have
+    // load current wallpaper(s)
+    // requires read perms for /var/mobile/Library/
     func loadWallpapers() {
-        if let lightWallpaper = UIImage(contentsOfFile: "/var/mobile/Library/SpringBoard/LockBackgroundThumbnail.jpg") {
-            lightImage = lightWallpaper
-            darkImage = lightWallpaper
-            hasLightImage = true
-            hasDarkImage = true
+        func exists(_ path: String) -> Bool {
+            FileManager.default.fileExists(atPath: path)
         }
-        if let darkWallpaper = UIImage(contentsOfFile: "/var/mobile/Library/SpringBoard/LockBackgroundThumbnaildark.jpg") {
-            darkImage = darkWallpaper
+
+        let lightData: NSData?
+        let darkData: NSData?
+
+        if exists("/var/mobile/Library/SpringBoard/HomeBackground.cpbitmap") {
+            lightData = NSData(contentsOfFile: "/var/mobile/Library/SpringBoard/HomeBackground.cpbitmap")
+            if exists("/var/mobile/Library/SpringBoard/HomeBackgrounddark.cpbitmap") {
+                darkData = NSData(contentsOfFile: "/var/mobile/Library/SpringBoard/HomeBackgrounddark.cpbitmap")
+            } else {
+                darkData = lightData
+            }
+        } else if exists("/var/mobile/Library/SpringBoard/LockBackground.cpbitmap") {
+            lightData = NSData(contentsOfFile: "/var/mobile/Library/SpringBoard/LockBackground.cpbitmap")
+            if exists("/var/mobile/Library/SpringBoard/LockBackgrounddark.cpbitmap") {
+                darkData = NSData(contentsOfFile: "/var/mobile/Library/SpringBoard/LockBackgrounddark.cpbitmap")
+            } else {
+                darkData = lightData
+            }
+        } else {
+            lightData = nil
+            darkData = nil
+        }
+
+        guard let lightData = lightData, let darkData = darkData else {
+            return
+        }
+
+        // load CPBitmapCreateImagesFromData
+        let appSupport = dlopen(Self.frameworkPath + "/AppSupport.framework/AppSupport", RTLD_LAZY)
+        defer {
+            dlclose(appSupport)
+        }
+        guard
+            let pointer = dlsym(appSupport, "CPBitmapCreateImagesFromData"),
+            let CPBitmapCreateImagesFromData = unsafeBitCast(
+                pointer,
+                to: (@convention(c) (_: NSData, _: UnsafeMutableRawPointer?, _: Int, _: UnsafeMutableRawPointer?) -> Unmanaged<CFArray>)?.self
+            )
+        else {
+            return
+        }
+
+        // convert cpbitmap data to UIImage
+        func bitmapDataToImage(data: NSData) -> UIImage? {
+            let imageArray: [AnyObject]? = CPBitmapCreateImagesFromData(data, nil, 1, nil).takeRetainedValue() as [AnyObject]
+            guard
+                let imageArray = imageArray,
+                imageArray.count > 0
+            else {
+                return nil
+            }
+            return UIImage(cgImage: imageArray[0] as! CGImage)
+        }
+
+        if let image = bitmapDataToImage(data: lightData) {
+            lightImage = image
+            hasLightImage = true
+        }
+        if let image = bitmapDataToImage(data: darkData) {
+            darkImage = image
             hasDarkImage = true
         }
     }
@@ -188,15 +252,13 @@ struct ContentView: View {
         }
 
         // load private frameworks
-        let frameworkPath: String
-        #if TARGET_OS_SIMULATOR
-            frameworkPath = "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS.simruntime/Contents/Resources/RuntimeRoot/System/Library/PrivateFrameworks"
-        #else
-            frameworkPath = "/System/Library/PrivateFrameworks"
-        #endif
+        let sbFoundation = dlopen(Self.frameworkPath + "/SpringBoardFoundation.framework/SpringBoardFoundation", RTLD_LAZY)
+        let sbUIServices = dlopen(Self.frameworkPath + "/SpringBoardUIServices.framework/SpringBoardUIServices", RTLD_LAZY)
 
-        let sbFoundation = dlopen(frameworkPath + "/SpringBoardFoundation.framework/SpringBoardFoundation", RTLD_LAZY)
-        let sbUIServices = dlopen(frameworkPath + "/SpringBoardUIServices.framework/SpringBoardUIServices", RTLD_LAZY)
+        defer {
+            dlclose(sbFoundation)
+            dlclose(sbUIServices)
+        }
 
         guard
             let SBFWallpaperOptions = NSClassFromString("SBFWallpaperOptions"),
@@ -242,9 +304,6 @@ struct ContentView: View {
             location.rawValue,
             UIUserInterfaceStyle.dark.rawValue
         )
-
-        dlclose(sbFoundation)
-        dlclose(sbUIServices)
     }
 }
 
