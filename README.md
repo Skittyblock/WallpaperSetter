@@ -6,6 +6,13 @@ WallpaperSetter requires the `com.apple.springboard.wallpaper-access` entitlemen
 ```sh
 xcodebuild build CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 ```
-To package it, move the resulting .app in the `build/Release-iphoneos` directory into a `Payload` folder, zip it, and then rename to an ipa file.
+To package it, copy the resulting .app in the `build/Release-iphoneos` directory into a `Payload` folder, fakesign it, zip it, and then rename to an ipa file.
+```sh
+cd build/Release-iphoneos/
+mkdir Payload
+ldid -S../../WallpaperSetter/WallpaperSetter.entitlements WPSetter.app
+cp -r WPSetter.app Payload
+zip -r WallpaperSetter.ipa Payload
+```
 
 Running on the simulator should work fine.
