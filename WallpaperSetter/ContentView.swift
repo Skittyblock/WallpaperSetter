@@ -78,41 +78,52 @@ struct ContentView: View {
                     }
                 }
                 Section {
-                    Button("Set Wallpaper") {
-                        showingLocationSelect = true
-                    }
-                    .confirmationDialog("Select location", isPresented: $showingLocationSelect, titleVisibility: .hidden) {
-                        Button("Home Screen") {
-                            setWallpaper(location: .homeScreen)
+                    if #available(iOS 15.0, *) {
+                        Button("Set Wallpaper") {
+                            showingLocationSelect = true
                         }
-                        Button("Lock Screen") {
-                            setWallpaper(location: .lockScreen)
+                        .confirmationDialog("Select location", isPresented: $showingLocationSelect, titleVisibility: .hidden) {
+                            Button("Home Screen") {
+                                setWallpaper(location: .homeScreen)
+                            }
+                            Button("Lock Screen") {
+                                setWallpaper(location: .lockScreen)
+                            }
+                            Button("Both") {
+                                setWallpaper(location: .both)
+                            }
                         }
-                        Button("Both") {
-                            setWallpaper(location: .both)
+                    } else {
+                        Button("Set Wallpaper") {
+                            showingLocationSelect = true
+                        }
+                        .actionSheet(isPresented: $showingLocationSelect) {
+                            ActionSheet(
+                                title: Text("Select location"),
+                                buttons: [
+                                    .default(Text("Home Screen")) {
+                                        setWallpaper(location: .homeScreen)
+                                    },
+                                    .default(Text("Lock Screen")) {
+                                        setWallpaper(location: .lockScreen)
+                                    },
+                                    .default(Text("Both")) {
+                                        setWallpaper(location: .both)
+                                    },
+                                    .cancel()
+                                ]
+                            )
                         }
                     }
                 }
             }
+            .listStyle(InsetGroupedListStyle())
             .navigationTitle("WallpaperSetter")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showingImagePicker) {
                 ImagePicker(image: $inputImage)
             }
-            .alert("Select Wallpapers", isPresented: $showingSelectAlert) {
-                Button("OK", role: .cancel) {
-                    showingSelectAlert = false
-                }
-            } message: {
-                Text("Please select a wallpaper before setting.")
-            }
-            .alert("Failed", isPresented: $showingErrorAlert) {
-                Button("OK", role: .cancel) {
-                    showingSelectAlert = false
-                }
-            } message: {
-                Text("Encountered an error when setting wallpaper.")
-            }
+            .modifier(ContentViewAlerts(showingSelectAlert: $showingSelectAlert, showingErrorAlert: $showingErrorAlert))
             .onChange(of: inputImage) { _ in loadImage() }
             .onAppear {
                 loadWallpapers()
@@ -234,6 +245,46 @@ struct ContentView: View {
 
         dlclose(sbFoundation)
         dlclose(sbUIServices)
+    }
+}
+
+struct ContentViewAlerts: ViewModifier {
+
+    @Binding var showingSelectAlert: Bool
+    @Binding var showingErrorAlert: Bool
+
+    func body(content: Content) -> some View {
+        if #available(iOS 15.0, *) {
+            content
+                .alert("Select Wallpapers", isPresented: $showingSelectAlert) {
+                    Button("OK", role: .cancel) {
+                        showingSelectAlert = false
+                    }
+                } message: {
+                    Text("Please select a wallpaper before setting.")
+                }
+                .alert("Failed", isPresented: $showingErrorAlert) {
+                    Button("OK", role: .cancel) {
+                        showingSelectAlert = false
+                    }
+                } message: {
+                    Text("Encountered an error when setting wallpaper.")
+                }
+        } else {
+            content
+                .alert(isPresented: $showingSelectAlert) {
+                    Alert(
+                        title: Text("Select Wallpapers"),
+                        message: Text("Please select a wallpaper before setting.")
+                    )
+                }
+                .alert(isPresented: $showingErrorAlert) {
+                    Alert(
+                        title: Text("Failed"),
+                        message: Text("Encountered an error when setting wallpaper.")
+                    )
+                }
+        }
     }
 }
 
